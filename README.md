@@ -1,237 +1,209 @@
-# voice-roles: расшифровка с ролями и интонацией на своём компьютере
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/media/banner-en-light.png">
+    <img src="docs/media/banner-en-dark.png" alt="voice-roles: who said it, and how" width="100%">
+  </picture>
+</p>
 
-Local CPU-only pipeline for Russian meetings and lectures: faster-whisper text, who-spoke-when via sherpa-onnx (pyannote segmentation + TitaNet embeddings), intonation contours via SwiftF0, a self-contained HTML review page for a human operator, voice profiles by name and a quality benchmark against the operator's corrections. No torch, no GPU, no cloud. The guide below is in Russian.
+<p align="center"><b>Who said it, and how.</b><br>
+Speaker roles and intonation on top of Whisper, a review page for a human operator, voice profiles that learn from their corrections. Free, open, on your CPU.</p>
 
-Инструмент превращает запись встречи или лекции в текст, раскладывает его по людям ("кто что сказал") и помечает интонацию каждой реплики. Всё считается на процессоре, без видеокарты, без интернета и без отправки записи куда-либо. Оператор проверяет результат на странице в браузере, а его правки учат инструмент: голоса запоминаются под именами, пороги интонации подстраиваются под слух.
+<p align="center">
+  <a href="#start-here-if-you-have-never-installed-python">Start here</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#the-review-page">Review page</a> ·
+  <a href="#calibration">Calibration</a> ·
+  <a href="#benchmark">Benchmark</a> ·
+  <a href="#security">Security</a> ·
+  <a href="README.ru.md">Русский</a>
+</p>
 
-Гайд рассчитан на человека, который никогда не ставил Python. Все команды для Windows.
+<p align="center">
+  <a href="https://github.com/criocore/voice-roles/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/criocore/voice-roles/ci.yml?style=flat-square&label=CI"></a>
+  <img alt="release 0.1.0" src="https://img.shields.io/badge/release-v0.1.0-5cc8ff?style=flat-square">
+  <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2fbf9a?style=flat-square">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-%E2%89%A5%203.11-121a33?style=flat-square&logo=python&logoColor=white">
+  <img alt="CPU only, no torch" src="https://img.shields.io/badge/CPU%20only-no%20torch%2C%20no%20GPU-5cc8ff?style=flat-square">
+  <img alt="Russian tested live" src="https://img.shields.io/badge/Russian-tested%20live-2fbf9a?style=flat-square">
+  <img alt="Windows checked" src="https://img.shields.io/badge/Windows-checked-2fbf9a?style=flat-square">
+  <img alt="macOS and Linux: CI green, launchers untested" src="https://img.shields.io/badge/macOS%20%7C%20Linux-CI%20green%2C%20launchers%20untested-b08d57?style=flat-square">
+</p>
 
-## 1. Что получится на выходе
+<p align="center">
+  <img src="docs/media/shot-review.png" alt="The review page: speakers, turns with contour, editable words, play from any turn" width="100%">
+</p>
 
-Рядом с записью `встреча.mp4` появляются файлы:
-
-| файл | что внутри |
-|---|---|
-| `встреча.txt` | текст с метками времени |
-| `встреча.srt` | субтитры |
-| `встреча.speakers.txt` | "[00:12:05] Анна: текст реплики", в шапке доля речи и высота голоса каждого |
-| `встреча.prosody.md` | таблица реплик с контуром (подъём, падение, ровно), наклоном тона, высотой, громкостью, паузами |
-| `встреча.review.html` | страница правок для оператора, открывается двойным кликом |
-| `встреча.auto.json` | нетронутый результат автомата, нужен бенчмарку |
-
-Сколько ждать на ноутбуке с Ryzen 7 5800H (8 ядер), запись 18 минут:
-
-| этап | модель medium | модель small |
-|---|---|---|
-| текст (Whisper) | 634 с | примерно 150 с |
-| роли (диаризация) | 146 с | 146 с |
-| интонация | 6 с | 6 с |
-
-Получается примерно 0,7 от длины записи на medium. Более слабый процессор: пропорционально дольше.
-
-## 2. Установка с нуля
-
-### 2.1 Python 3.11
-
-Скачай установщик с python.org, раздел Downloads, версия 3.11.x (с 3.12 и 3.13 тоже работает, 3.11 проверена). При установке поставь галочку "Add python.exe to PATH". Проверка в командной строке (Win+R, `cmd`, Enter):
-
-```
-python --version
-```
-
-Должно напечатать `Python 3.11.9` или похожее.
-
-### 2.2 ffmpeg
-
-Он вытаскивает звук из видео. Самый простой путь:
+<p align="center"><a href="docs/demo/demo.review.html">Open the demo page</a> (download the file and open it in Chrome or Edge; a made-up meeting, no audio)</p>
 
 ```
-winget install Gyan.FFmpeg
-```
-
-Закрой и заново открой командную строку, проверь: `ffmpeg -version`. Если winget нет, скачай сборку с gyan.dev, распакуй, папку `bin` добавь в PATH.
-
-### 2.3 Папка инструмента и библиотеки
-
-Скачай репозиторий: кнопка Code, Download ZIP, распакуй куда угодно, например в `D:\tools\transcribe`. Или, если есть git:
-
-```
-git clone https://github.com/criocore/voice-roles.git D:\tools\transcribe
-```
-
-Библиотеки занимают около 2 ГБ, модели ещё 1,5 ГБ на medium, поэтому лучше диск с запасом места. В командной строке:
-
-```
-cd /d D:\tools\transcribe
+git clone https://github.com/criocore/voice-roles.git
+cd voice-roles
 python -m venv venv
-venv\Scripts\pip install --upgrade pip
 venv\Scripts\pip install -r requirements.txt
+get_models.bat                                   # 45 MB of diarization models
+transcribe.bat "C:\recordings\meeting.mp4" --speakers
 ```
 
-Проверенные версии: faster-whisper 1.2.1, ctranslate2 4.8.2, onnxruntime 1.31, sherpa-onnx 2.0.1, swift-f0 0.3.0, soundfile 0.14.0, numpy 2.4. Если pip тянет что-то на системный диск, где мало места, задай кэш на другой диск перед установкой: `set PIP_CACHE_DIR=D:\pip-cache`.
+Then open `meeting.review.html` next to the recording, fix what the machine got wrong, save `meeting.review.json` and drop it on `apply_review.bat`. From now on those people are recognised by voice.
 
-### 2.4 Модели
+## The recording never leaves the machine
 
-Модель Whisper скачается сама при первом запуске в папку `models` (medium около 1,5 ГБ, small около 500 МБ).
+Whisper, the diarization models and the pitch tracker run through CTranslate2 and onnxruntime on the CPU. No torch, no GPU, no API key, no cloud. A laptop with 8 cores transcribes an 18-minute meeting in about 13 minutes including roles and intonation; a recording of a team meeting, a lecture or an interview stays on the disk where it was.
 
-Модели для ролей (около 45 МБ) скачивает `get_models.bat`, двойной клик. Если он не сработал, вот что он делает, файлы лежат в релизах проекта sherpa-onnx на GitHub:
+## What you get
 
-1. Сегментация речи: `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2`. Распакуй (7-Zip открывает .tar.bz2) так, чтобы получился файл `models\diar\sherpa-onnx-pyannote-segmentation-3-0\model.int8.onnx`.
-2. Отпечаток голоса: `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx` (в адресе опечатка "recongition", так в оригинале). Положи в `models\diar\nemo_en_titanet_small.onnx`.
+Next to `meeting.mp4`:
 
-Итоговая раскладка:
-
-```
-D:\tools\transcribe\
-  transcribe.bat, transcribe.py, speakers.py, review_template.html
-  apply_review.bat, apply_review.py
-  bench_quality.bat, bench_quality.py
-  get_models.bat, get_models.py, requirements.txt
-  venv\
-  models\
-    diar\sherpa-onnx-pyannote-segmentation-3-0\model.int8.onnx
-    diar\nemo_en_titanet_small.onnx
-    (сюда же Whisper скачает свои папки)
-  voices\          появится после первой правки, профили голосов по именам
-  calibration\     появится после первой правки, метки контуров, пороги, журнал бенчмарка
-```
-
-## 3. Первый прогон
-
-Перетащи файл записи (mp4, mkv, m4a, mp3, wav) на `transcribe.bat`. Это даст только текст. Для ролей и интонации запускай из командной строки:
-
-```
-D:\tools\transcribe\transcribe.bat "C:\записи\встреча.mp4" --speakers
-```
-
-Полезные ключи:
-
-| ключ | зачем |
+| file | content |
 |---|---|
-| `--model small` | в 4 раза быстрее, текст хуже; для проверки, что всё работает |
-| `--names "Анна,Борис,Вера"` | имена по порядку, в котором люди впервые говорят; нужен только пока нет профилей голосов |
-| `--clusters 4` | сколько людей на записи, если точно знаешь; иначе инструмент определяет сам |
-| `--threshold 0.9` | порог склейки голосов: выше = меньше людей, ниже = больше (см. калибровку) |
-| `--force` | пересчитать, даже если результат уже есть |
-| `--threads 8` | потоков процессора для ролей, по числу ядер |
+| `meeting.txt` | text with timestamps |
+| `meeting.srt` | subtitles |
+| `meeting.speakers.txt` | `[00:12:05] Anna: text of the turn`, with speech share and voice pitch per person in the header |
+| `meeting.prosody.md` | one row per turn: contour (rise, fall, level), final slope, pitch height, loudness, pauses |
+| `meeting.review.html` | the review page for a human operator, opens with a double click |
+| `meeting.auto.json` | the untouched automatic result, used by the benchmark |
 
-Первый запуск с `--model small` на 2-минутном куске займёт пару минут и покажет, что установка в порядке. Кусок вырезается так: `ffmpeg -i встреча.mp4 -t 120 -c copy кусок.mp4`.
+## How it works
 
-## 4. Страница правок
+1. **Text.** faster-whisper (medium by default) with word timestamps.
+2. **Who spoke.** sherpa-onnx: pyannote-segmentation-3.0 finds speech regions, TitaNet-small turns each region into a 192-number voice embedding, clustering groups them. The number of people is found automatically: cluster at a high threshold (0.9), merge clusters whose voices match at cosine 0.8 and above, give short "ghost" clusters (under 15 s in total) to the nearest voice. Each word gets the speaker with the largest time overlap; a lone word of another speaker between two words of the same person is treated as a boundary error.
+3. **How it was said.** SwiftF0 tracks pitch and loudness frame by frame. Pitch is converted to semitones from that person's own median, so a deep and a high voice are compared on the same scale. The slope of the last 300 ms gives the contour: rise, fall or level. Loudness is a z-score against the person's norm; pauses longer than 250 ms are counted.
+4. **The operator.** The review page shows all of it, lets a person fix it, and the fixes feed back: voice profiles by name, contour thresholds, a benchmark table.
 
-Открой `встреча.review.html` двойным кликом (Chrome или Edge). Запись должна лежать в той же папке, тогда её можно слушать прямо со страницы. Если звук не идёт (mkv браузер не играет), нажми "Выбрать запись" и укажи файл, либо заранее сделай `ffmpeg -i встреча.mkv -vn встреча.m4a`.
+The project started from a hypothesis that pitch alone could tell speakers apart. A literature pass (over 200 sources, summarised in the Russian README) showed that it cannot: in the test meeting all four voices were male with medians of 116, 120, 124 and 142 Hz, while their embeddings differed at cosine 0.51 or less. Pitch is kept for what it is good at, intonation, on top of speaker labels that come from embeddings.
 
-Что где:
+## Measured
 
-| действие | как |
-|---|---|
-| прослушать реплику | клик по времени слева; пробел ставит паузу, Esc останавливает |
-| переименовать человека | карточки сверху, поле с именем |
-| сменить говорящего у реплики | список рядом с временем; пункт "+ новый человек" добавляет пятого, шестого и так далее |
-| разрезать реплику (два человека в одной) | правый клик по слову, с которого начинается второй |
-| склеить с предыдущей | кнопка ⤒ справа от реплики, говорящий остаётся от предыдущей |
-| исправить слово | клик по слову, ввод, Enter; пустое слово удаляется |
-| удалить реплику (шум) | кнопка ✕ |
-| исправить контур интонации | список после имени; исправленные подсвечены жёлтой рамкой |
-| пометить "вернусь позже" | кнопка ⚑, реплика подсвечивается |
+One machine so far: Windows 11, Ryzen 7 5800H (8 cores, 16 threads), 30 GB RAM, no GPU. An 18-minute online meeting with four people, Russian.
 
-Правки сохраняются в браузере сами, можно закрыть и вернуться. Когда закончил, нажми "Сохранить .review.json" и сохрани файл рядом с записью (браузер сам предложит имя). Кнопка "Сбросить правки" возвращает исходную автоматическую разметку.
-
-Порядок проверки, который экономит время:
-
-1. Шапка: сколько людей нашлось. Лишний "Спикер 5" с парой реплик обычно наложение голосов или шум: переназначь его реплики настоящим людям, карточка опустеет и исчезнет из выдачи.
-2. Имена: назови людей в карточках. Высота голоса в карточке (Гц) помогает отличить, но не полагайся только на неё: на тестовой встрече четыре мужских голоса были 116, 120, 124 и 142 Гц.
-3. Пройди реплики с пунктиром подчёркнутыми словами: это слова на границе смены говорящего, их инструмент привязал неуверенно. Там же чаще всего нужен правый клик "разрезать".
-4. Контуры: слушай и правь только те реплики, в которых слышишь явный вопрос или явную точку. Не нужно размечать всё подряд, для подстройки хватает 30 честных меток.
-
-## 5. Применить правки
-
-Перетащи сохранённый `встреча.review.json` на `apply_review.bat`. Скрипт:
-
-1. пересобирает `.speakers.txt`, `.prosody.md` и саму страницу по исправленным данным;
-2. запоминает голоса людей с настоящими именами в `voices\Имя.npy` (строки "Спикер N" пропускает). При следующем прогоне `--speakers` эти люди подписываются по голосу, `--names` больше не нужен;
-3. складывает метки контуров в `calibration\contours.json`; когда накопится 30 и больше, подбирает пороги и пишет `calibration\contour_thresholds.json`.
-
-Если под уже известным именем приходит непохожий голос (сходство ниже 0,55), профиль не трогается и в консоли будет предупреждение: либо имя поставлено не тому человеку, либо профиль устарел. Во втором случае удали `voices\Имя.npy` и примени правки снова.
-
-## 6. Бенчмарк: как понять, что стало лучше
-
-Перетащи `встреча.review.json` на `bench_quality.bat`. Он сравнивает автомат (`.auto.json`) с правдой (правки оператора) и дописывает таблицу в `calibration\bench.md`, так что через месяц видно, куда движется качество.
-
-| метрика | что значит | ориентир |
+| stage | medium model | small model |
 |---|---|---|
-| людей: авто / по оператору | нашёл ли нужное число людей | должно совпасть; расхождение лечится порогом, см. 7.1 |
-| слова с верным говорящим | доля слов, которые автомат отдал правильному человеку (после лучшего сопоставления "Спикер N" с именами) | 90% и выше для встречи в Zoom/МТС Линк хорошо; ниже 80% значит, что людей склеило или разорвало |
-| ошибка по времени речи | то же в секундах, аналог DER (diarization error rate) из научных статей | у лучших систем на реальных встречах 10-20% DER, так что 5-10% здесь отличный результат |
-| имена по голосу верны | из людей, подписанных по профилям, сколько подписано правильно | 100%; одна ошибка = подними `--voice-sim` или обнови профиль, см. 7.2 |
-| пропущенные / лишние границы | где оператор разрезал реплику, а автомат не заметил смену, и наоборот | единицы на час записи; много пропущенных = люди перебивают друг друга, автомат так и будет ошибаться |
-| слова исправлены / удалены | ошибки распознавания текста | это про Whisper: много правок = переходи на medium или large-v3 |
-| контур совпал | доля реплик, где контур автомата совпал с меткой оператора | честный потолок невысок: люди между собой соглашаются об интонации слабо; 70% и выше хорошо; 100% при нуле исправлений ничего не значит |
-| скорость | секунды на этап и RTF (время счёта / длина записи) | RTF ролей около 0,13 на 8 ядрах |
+| text (Whisper, word timestamps) | 634 s | about 150 s |
+| roles (diarization, 8 threads) | 146 s, RTF 0.13 | 146 s |
+| intonation (SwiftF0) | 6 s | 6 s |
 
-Вторая таблица показывает каждого человека: сколько его слов найдено и каким "Спикером" он был у автомата. Третья, матрица контуров: строки то, что сказал автомат, столбцы то, что услышал оператор. Если "подъём" автомата часто оказывается "ровно" у оператора, порог подъёма слишком низкий, подстройка его поднимет.
-
-Перебор порога для своих записей (каждый вариант пересчитывает роли заново, 18-минутная запись = 2,5 минуты на вариант):
-
-```
-bench_quality.bat "C:\записи\встреча.review.json" --sweep 0.7,0.8,0.9,0.95
-bench_quality.bat "C:\записи\встреча.review.json" --sweep-clusters 3,4,5
-```
-
-Выбирай вариант, где число людей совпало и "слова верно" максимальны, и дальше запускай transcribe с этим `--threshold`.
-
-## 7. Советы по калибровке
-
-### 7.1 Число людей неправильное
-
-Симптомы и лекарства:
-
-| что видно | что делать |
+| quality fact | value |
 |---|---|
-| один человек разбит на двоих ("Спикер 2" и "Спикер 5" звучат одинаково) | подними `--threshold` до 0.95, или на странице переназначь реплики, тогда apply_review запишет один профиль, и в следующий раз голос узнается |
-| два человека склеены в одного | опусти `--threshold` до 0.8 или задай `--clusters N` |
-| лишний спикер с несколькими секундами речи | это наложение голосов или шум; просто переназначь на странице |
-| на записи один лектор, а найдено трое | `--clusters 1`, инструменту тяжело с одним голосом на длинной записи |
+| people found without any hint | 4 of 4 |
+| cosine between different speakers | 0.18 to 0.51 |
+| same speaker, full meeting vs a 200-second cut | 0.88 to 0.96 |
+| fixed `--clusters 4` vs the automatic merge pipeline | 82% of words agree, 18% of speech time differs, 10 boundaries missed |
+| thresholds 0.8 and 0.95 vs the default 0.9 | 99% of words agree, same 4 people |
 
-Пороги работают так: голоса сравниваются косинусом, при 0.9 инструмент сначала находит слишком много "людей", а потом сам сливает тех, у кого сходство выше 0.8, и раздаёт короткие обрывки ближайшему голосу. На тестовой встрече с четырьмя мужчинами разные люди были похожи не больше чем на 0.51, один и тот же человек в разных кусках на 0.88-0.96.
+The last two rows come from `bench_quality.py --sweep`. A quality number against a human truth needs a human: run the benchmark after your first corrected recording, and please post the table in an issue with your CPU.
 
-### 7.2 Голоса не узнаются по имени
+## The review page
 
-Профиль узнаёт человека, если сходство не ниже `--voice-sim` (0.6). Что помогает:
+A single HTML file with the transcript embedded. It reads the recording from the same folder through the browser (mp4, m4a, mp3, wav play directly; for mkv press "Choose recording" or convert first) and keeps unsaved edits in the browser's local storage.
 
-1. Несколько образцов с разных дней и микрофонов: каждый `apply_review` с именем добавляет образец (хранится до 8 последних). Один образец с гарнитуры может не узнать того же человека с телефона.
-2. Если человек есть в `voices`, но остался "Спикером", посмотри в консоли transcribe строку "по голосу узнаны" и в бенчмарке колонку "имя верно". Можно опустить `--voice-sim` до 0.5, но тогда вырастает риск подписать чужого: сначала проверь на бенчмарке.
-3. Два человека с похожими голосами (сходство между профилями выше 0.6) будут путаться. Это ограничение модели, помогает только `--names` по порядку или правка на странице.
-
-### 7.3 Контуры интонации
-
-Контур считается по движению тона в последних 300 мс реплики: наклон в полутонах в секунду и высота конца относительно обычного тона этого человека. Исходные пороги: подъём при наклоне больше 8, или больше 3 при высокой концовке; падение зеркально. Они взяты наугад, подстройка под слух оператора делается так:
-
-1. На странице слушай реплики, в которых чётко слышишь вопрос (подъём) или завершение (падение), и ставь метку. Хватит 30-50 реплик с нескольких записей, лучше с разными людьми.
-2. `apply_review` после каждого файла пересчитывает пороги перебором и пишет в консоль "пороги подстроены" с процентом совпадения до и после.
-3. `bench_quality` показывает матрицу: куда именно ошибается автомат.
-4. Сбросить к исходным: удалить `calibration\contour_thresholds.json`. Начать копить метки заново: удалить `calibration\contours.json`.
-
-Чего ждать: совпадение 70-80% с одним оператором реально, 100% нет. Эмоции (радость, раздражение) инструмент не определяет, только форму тона, громкость относительно нормы человека и паузы.
-
-### 7.4 Качество текста
-
-Роли привязываются к словам Whisper, поэтому плохой текст портит и роли. Medium для русского обычно достаточно, large-v3 точнее, но в 2 раза дольше. Если Whisper зацикливается на длинных записях или выдумывает текст в тишине, проверь, что запись без длинных музыкальных вставок, и режь её на части по часу.
-
-## 8. Если что-то не работает
-
-| сообщение или симптом | причина и что делать |
+| action | how |
 |---|---|
-| `ffmpeg не является внутренней или внешней командой` | ffmpeg не в PATH: переоткрой командную строку после установки или добавь папку `bin` в PATH |
-| `No module named sherpa_onnx` | библиотеки ставились не в venv: повтори `venv\Scripts\pip install ...` |
-| долгое молчание при "Загрузка модели" | первый раз Whisper качает модель, medium 1,5 ГБ |
-| `Не найдено: model.int8.onnx` или похожее про models\diar | модели для ролей не распакованы в нужную раскладку, см. 2.4 |
-| страница открылась, но реплики не играют | запись не в той папке или формат mkv: кнопка "Выбрать запись" |
-| нашлось 20 человек | у записи сильный шум или музыка; попробуй `--threshold 0.95` и `--clusters N` |
-| ошибка про размер входа у TitaNet (числа вроде "12288 by 22474") | образец голоса длиннее 2 минут; в коде он обрезан до 60 с, если менял `EMB_MAX_SEC`, верни |
-| диск C заполнился | модели и кэш pip лежат на системном диске: перенеси папку инструмента на другой диск и задай `PIP_CACHE_DIR` |
-| `apply_review` пишет "настоящих имён нет" | в карточках остались "Спикер N": профили голосов пишутся только под настоящими именами |
+| listen to a turn | click its time; Space pauses, Esc stops |
+| rename a person | the cards at the top |
+| change the speaker of a turn | the list next to the time; "+ new person" adds one |
+| split a turn (two people in one) | right-click the first word of the second person |
+| merge with the previous turn | ⤒ on the right, the speaker of the previous turn wins |
+| fix a word | click it, type, Enter; an emptied word is removed |
+| delete a turn (noise) | ✕ |
+| fix the intonation contour | the list after the name; fixed ones get an amber frame |
+| flag for later | ⚑ |
 
-## 9. Что под капотом
+"Save .review.json" writes the corrected transcript next to the recording through the browser's save dialog. "Download .speakers.txt" gives the corrected text alone. "Reset" returns to the automatic result.
 
-Текст: faster-whisper (CTranslate2, int8). Роли: sherpa-onnx, сегментация pyannote-segmentation-3.0 плюс отпечатки голоса TitaNet-small, слова привязываются к людям по наибольшему перекрытию во времени. Интонация: SwiftF0 даёт тон и громкость по кадрам, высота считается в полутонах от медианы конкретного человека. Все модели работают через onnxruntime на процессоре, torch не нужен.
+The page strings are Russian; the logic is language-free. A small i18n of the template is a welcome pull request.
+
+## Calibration
+
+Drop `meeting.review.json` on `apply_review.bat`. Three things happen:
+
+- `.speakers.txt`, `.prosody.md` and the page itself are rebuilt from the corrected data.
+- Every person with a real name (not "Спикер N") gets a voice profile in `voices/<name>.npy`: a TitaNet embedding of up to 60 s of their speech, up to 8 samples per name from different recordings. The next `transcribe.bat --speakers` labels those people by voice when the match is at least `--voice-sim` (0.6). A new sample under an existing name is refused when it does not match the stored ones (cosine under 0.55), which catches a name put on the wrong person.
+- Contour labels go to `calibration/contours.json`. Once 30 labels exist with at least one correction, a grid search picks the slope and end-height thresholds that agree best with the operator and writes `calibration/contour_thresholds.json`; delete the file to return to the defaults.
+
+Tips that came out of the first recordings:
+
+- Fix the number of people first, names second, boundaries third, contours last. Words underlined with dots are the ones the machine was unsure about; most splits are needed there.
+- One person split in two: raise `--threshold` to 0.95, or just reassign on the page and let the profile merge them next time. Two people merged: lower it to 0.8 or set `--clusters N`. One lecturer found as three: `--clusters 1`.
+- Label contours only where you clearly hear a question or a full stop. Thirty honest labels beat three hundred guesses. Human agreement on intonation is low; 70 to 80% agreement with one operator is a realistic ceiling.
+- Voice profiles need samples from more than one day and microphone before they recognise people reliably across sessions. The 0.6 threshold was set on one recording; report what works for you.
+
+## Benchmark
+
+Drop `meeting.review.json` on `bench_quality.bat`. The automatic result (`.auto.json`) is compared with the operator's truth and a table is appended to `calibration/bench.md`.
+
+| metric | meaning | target |
+|---|---|---|
+| people: auto / operator | speaker count | equal |
+| words with the right speaker | share of words given to the right person after the best "Спикер N" to name mapping | 90% and above for an online meeting |
+| speech-time error | the same in seconds, a DER-like number | 5 to 10% is excellent; published systems sit at 10 to 20% DER on real meetings |
+| names by voice correct | of the people labelled from `voices/`, how many right | 100% |
+| missed / extra boundaries | the operator split a turn the machine had merged, and vice versa | a handful per hour |
+| words edited / dropped | text errors, a Whisper matter | fewer with medium or large-v3 |
+| contour agreement | turns whose contour matched the operator's label, with a confusion matrix | 70% and above; 100% with zero corrections means nothing |
+| speed | seconds per stage and RTF | roles at RTF 0.13 on 8 cores |
+
+`--sweep 0.7,0.8,0.9,0.95` and `--sweep-clusters 3,4,5` re-run diarization with other settings against the same truth, two and a half minutes per variant for an 18-minute file, and print the same metrics per variant.
+
+## Start here (if you have never installed Python)
+
+Windows steps; the Python code has nothing Windows-specific, only the `.bat` launchers are.
+
+1. **Python 3.11 or newer** from [python.org/downloads](https://www.python.org/downloads/). In the installer tick "Add python.exe to PATH". Open a terminal (Win, type `cmd`, Enter) and check:
+   ```
+   python --version
+   ```
+2. **ffmpeg** extracts audio from video:
+   ```
+   winget install Gyan.FFmpeg
+   ```
+   Close and reopen the terminal, then `ffmpeg -version` must print a version. Without winget: download a build from gyan.dev, unpack, add its `bin` folder to PATH.
+3. **The tool.** Code → Download ZIP on this page, unpack to a disk with 5 GB free (libraries 2 GB, Whisper medium 1.5 GB), or `git clone https://github.com/criocore/voice-roles.git`. In the terminal, inside that folder:
+   ```
+   python -m venv venv
+   venv\Scripts\pip install --upgrade pip
+   venv\Scripts\pip install -r requirements.txt
+   ```
+   If the system disk is nearly full, set `set PIP_CACHE_DIR=D:\pip-cache` first.
+4. **Models.** Double-click `get_models.bat` (45 MB from the sherpa-onnx releases on GitHub). Whisper downloads itself on the first run.
+5. **First run.** Cut two minutes of a recording, `ffmpeg -i meeting.mp4 -t 120 -c copy cut.mp4`, and run
+   ```
+   transcribe.bat cut.mp4 --speakers --model small
+   ```
+   A couple of minutes later `cut.speakers.txt` and `cut.review.html` appear next to the file. Then the full recording with the default medium model.
+
+Useful flags: `--names "Anna,Boris,Vera"` (names in order of first appearance, only needed until voice profiles exist), `--clusters 4` (known number of people), `--threshold 0.9`, `--threads 8`, `--force`, `--voice-sim 0.6`.
+
+## If something does not work
+
+| symptom | cause and fix |
+|---|---|
+| `ffmpeg is not recognized` | not in PATH: reopen the terminal after installing, or add the `bin` folder |
+| `No module named sherpa_onnx` | libraries were installed outside the venv: repeat step 3 |
+| long silence at "Загрузка модели" | the first run downloads Whisper medium, 1.5 GB |
+| error mentioning `model.int8.onnx` | diarization models are not in `models/diar`: run `get_models.bat` |
+| the page opens but turns do not play | the recording is not in the same folder, or it is mkv: "Choose recording" |
+| 20 people found | heavy noise or music: try `--threshold 0.95` and `--clusters N` |
+| onnxruntime error with shapes like "12288 by 22474" | a voice sample longer than 2 minutes reached TitaNet; the code caps samples at 60 s, restore `EMB_MAX_SEC` if you changed it |
+| `apply_review` says there are no real names | the cards still say "Спикер N": profiles are stored under real names only |
+
+## Limits, and what would help
+
+- Measured on one machine and a handful of Russian recordings. Benchmark tables from other CPUs, languages and recording types are the most useful contribution: see [CONTRIBUTING.md](CONTRIBUTING.md).
+- Overlapping speech goes to one speaker; the page is where that gets fixed.
+- Intonation is the shape of pitch, loudness and pauses, not emotion. Emotion recognition for Russian tops out around 0.54 macro-F1 in the literature and was left out on purpose.
+- Only `.bat` launchers exist; `.sh` twins and a report from macOS or Linux would close that gap.
+- The review page is Russian-only in its strings.
+
+## Security
+
+Nothing is sent anywhere; the only network access is the model download. Voice profiles in `voices/` identify people by voice and are kept out of git; treat them, and the transcripts, as personal data. Details and reporting: [SECURITY.md](SECURITY.md).
+
+## Licenses
+
+Code: MIT (`LICENSE`). Libraries and models belong to their authors: faster-whisper (MIT) and the Whisper weights (MIT, OpenAI); sherpa-onnx (Apache-2.0); pyannote-segmentation-3.0 (MIT, exported to ONNX by the sherpa-onnx team); TitaNet-small (NVIDIA NeMo, CC-BY-4.0); SwiftF0 under the terms in its own repository. Check the model cards before commercial use.
+
+## A note from the author
+
+voice-roles was built by one person together with an AI coding agent (Claude Code) in one long day, starting from a question about their own meeting recordings, and is shared in good faith. It is not a surveillance tool and not a judgement of anyone's speech; use it on recordings you are allowed to process, and tell the people in them. If something here is wrong or hurts someone's rights, open an issue and it will be fixed.
+
+<p align="center">Built with Claude Code · checked on Windows · <a href="README.ru.md">Русская версия</a></p>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>voice-roles banner</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 360px; overflow: hidden; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; background: #0e1116; color: #e9e6df; position: relative; }
+  body.light { background: #f5f2ea; color: #1b2130; }
+  .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px); background-size: 40px 40px; }
+  .light .grid { background-image: linear-gradient(rgba(0,0,0,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,.06) 1px, transparent 1px); }
+  .glow { position: absolute; left: -80px; top: -120px; width: 620px; height: 620px; border-radius: 50%; background: radial-gradient(circle, rgba(92,200,255,.18), transparent 62%); }
+  .light .glow { background: radial-gradient(circle, rgba(31,120,200,.14), transparent 62%); }
+  svg.art { position: absolute; left: 70px; top: 40px; }
+  .text { position: absolute; left: 490px; top: 82px; width: 760px; }
+  h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: 70px; letter-spacing: 11px; color: #5cc8ff; line-height: 1; }
+  .light h1 { color: #1f78c8; }
+  .tag { margin: 20px 0 10px; font-size: 28px; color: #e9e6df; }
+  .light .tag { color: #1b2130; }
+  .sub { font-size: 17px; color: #9aa3b2; }
+  .light .sub { color: #5a6475; }
+  .dots { position: absolute; right: 60px; bottom: 36px; display: flex; gap: 14px; }
+  .dots span { width: 12px; height: 12px; border-radius: 50%; display: block; }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div class="glow"></div>
+<svg class="art" width="400" height="280" viewBox="0 0 400 280" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- three speakers: pitch contours in semitones, one colour each -->
+  <path d="M20 70 C 60 60, 80 48, 120 52 S 180 78, 220 64 S 300 36, 380 44" stroke="#5cc8ff" stroke-width="5"/>
+  <path d="M20 150 C 70 150, 90 170, 140 160 S 220 128, 260 142 S 340 180, 380 186" stroke="#ffb454" stroke-width="5"/>
+  <path d="M20 232 C 60 236, 100 212, 150 222 S 230 250, 280 236 S 340 206, 380 214" stroke="#8be28b" stroke-width="5"/>
+  <!-- word ticks under each contour -->
+  <g stroke="#5cc8ff" stroke-opacity=".45" stroke-width="2">
+    <path d="M40 92v10M72 92v10M118 92v10M156 92v10M214 92v10M262 92v10M318 92v10M352 92v10"/>
+  </g>
+  <g stroke="#ffb454" stroke-opacity=".45" stroke-width="2">
+    <path d="M44 200v10M90 200v10M130 200v10M196 200v10M240 200v10M298 200v10M344 200v10"/>
+  </g>
+  <g stroke="#8be28b" stroke-opacity=".45" stroke-width="2">
+    <path d="M36 262v10M84 262v10M140 262v10M188 262v10M250 262v10M300 262v10M362 262v10"/>
+  </g>
+  <!-- speaker dots at the start of each line -->
+  <circle cx="20" cy="70" r="8" fill="#5cc8ff"/>
+  <circle cx="20" cy="150" r="8" fill="#ffb454"/>
+  <circle cx="20" cy="232" r="8" fill="#8be28b"/>
+</svg>
+<div class="text">
+  <h1 id="title">VOICE ROLES</h1>
+  <div class="tag" id="tag">Who said it, and how.</div>
+  <div class="sub" id="sub">speaker roles · intonation · a review page for a human · all on your CPU</div>
+</div>
+<div class="dots"><span style="background:#5cc8ff"></span><span style="background:#ffb454"></span><span style="background:#8be28b"></span><span style="background:#ff8fb3"></span></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  if (q.get("theme") === "light") document.body.classList.add("light");
+  if (q.get("lang") === "ru") {
+    document.getElementById("tag").textContent = "Кто сказал и как сказал.";
+    document.getElementById("sub").textContent = "роли говорящих · интонация · страница правок для человека · всё на вашем процессоре";
+  }
+</script>
+</body>
+</html>
