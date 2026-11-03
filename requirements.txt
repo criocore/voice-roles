@@ -1,0 +1,5 @@
+faster-whisper>=1.2
+sherpa-onnx>=2.0
+swift-f0>=0.3
+soundfile>=0.13
+numpy>=2.0

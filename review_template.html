@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Правка расшифровки</title>
+<style>
+:root{--bg:#14161a;--panel:#1d2026;--line:#2c3038;--fg:#e6e6e6;--mute:#8b93a1;--acc:#5cc8ff;--warn:#ffb454;--bad:#ff6b6b;
+  --c0:#5cc8ff;--c1:#ffb454;--c2:#8be28b;--c3:#ff8fb3;--c4:#c7a3ff;--c5:#6ee7d8;--c6:#ffd86b;--c7:#ff9f6e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px}
+h1{font-size:17px;margin:0 0 6px;font-weight:600}
+.hint{color:var(--mute);font-size:13px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+button{background:#262a32;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;font-size:13px}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);color:#0b1016;border-color:var(--acc);font-weight:600}
+.status{color:var(--mute);font-size:13px;margin-left:auto}
+main{max-width:1200px;margin:0 auto;padding:12px 16px 80px}
+#speakers{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 14px}
+.spk{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.sw{width:12px;height:12px;border-radius:50%}
+.spk input{background:#0f1115;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:3px 6px;font:inherit;width:140px}
+.spk small{color:var(--mute)}
+.turn{display:grid;grid-template-columns:72px 150px 110px 1fr auto;gap:8px;align-items:start;padding:7px 8px;border-left:3px solid transparent;border-bottom:1px solid var(--line)}
+.turn.playing{background:#1a2230}
+.turn.flag{background:#2a2212}
+.t{font-variant-numeric:tabular-nums;color:var(--acc);background:none;border:none;padding:2px 0;text-align:left;cursor:pointer;font-size:14px}
+.t:hover{text-decoration:underline}
+select{background:#0f1115;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:3px 4px;font:inherit;font-size:13px;max-width:100%}
+select.fixed{border-color:var(--warn)}
+.words{line-height:1.7}
+.w{padding:1px 2px;border-radius:3px;outline:none}
+.w:hover{background:#262a32}
+.w:focus{background:#0f1115;box-shadow:0 0 0 1px var(--acc)}
+.w.unsure{text-decoration:underline dotted var(--warn)}
+.meta{color:var(--mute);font-size:12px;margin-top:3px}
+.ops{display:flex;gap:4px;opacity:.35}
+.turn:hover .ops{opacity:1}
+.ops button{padding:2px 7px}
+#filepick{display:none}
+.banner{background:#2a2212;border:1px solid var(--warn);border-radius:6px;padding:6px 10px;margin:8px 0;font-size:13px}
+kbd{background:#0f1115;border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="hint">Клик по времени: прослушать реплику. <kbd>Пробел</kbd> пауза. Имя человека правится в карточке сверху, говорящий у реплики: в списке.
+    Правый клик по слову: разрезать реплику перед ним. Слова правятся прямо в тексте, <kbd>Enter</kbd> завершает. Контур интонации: список у реплики, исправленный подсвечен.</div>
+  <div class="bar">
+    <button class="primary" id="save">Сохранить .review.json</button>
+    <button id="savetxt">Скачать .speakers.txt</button>
+    <button id="pick">Выбрать запись</button>
+    <input type="file" id="filepick" accept="audio/*,video/*">
+    <button id="reset">Сбросить правки</button>
+    <span class="status" id="status"></span>
+  </div>
+  <audio id="au" preload="metadata"></audio>
+</header>
+<main>
+  <div id="banner"></div>
+  <div id="speakers"></div>
+  <div id="turns"></div>
+</main>
+<script>
+const EMBEDDED = /*DATA*/null;
+const KEY = "review:" + (EMBEDDED && EMBEDDED.title);
+const CONTOURS = ["подъём", "падение", "ровно", "?"];
+let data, edits = 0, cur = -1, stopAt = null;
+
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function ts(s){ s = Math.floor(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return [h,m,x].map(v => String(v).padStart(2,"0")).join(":"); }
+function color(k){ return `var(--c${k % 8})`; }
+function text(tr){ return tr.words.map(w => w.w).join("").trim(); }
+function setStatus(s){ document.getElementById("status").textContent = s; }
+
+function load(){
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
+  if (saved && saved.data && saved.data.turns) {
+    data = saved.data; edits = saved.edits || 0;
+    document.getElementById("banner").innerHTML = `<div class="banner">Подхвачены правки из браузера от ${saved.when}. Кнопка "Сбросить правки" вернёт исходную расшифровку.</div>`;
+  } else data = clone(EMBEDDED);
+}
+function persist(){
+  edits++;
+  try { localStorage.setItem(KEY, JSON.stringify({data, edits, when: new Date().toLocaleString("ru")})); } catch(e) {}
+  setStatus(`правок: ${edits}, не сохранено в файл`);
+}
+
+function renderSpeakers(){
+  const total = {};
+  data.turns.forEach(tr => total[tr.spk] = (total[tr.spk] || 0) + (tr.end - tr.start));
+  const box = document.getElementById("speakers");
+  box.innerHTML = "";
+  data.speakers.forEach((s, k) => {
+    const d = document.createElement("div"); d.className = "spk";
+    d.innerHTML = `<span class="sw" style="background:${color(k)}"></span><input value="${s.name.replace(/"/g,"&quot;")}" data-k="${k}">` +
+      `<small>${ts(total[k] || 0)}${s.f0 ? ", " + s.f0 + " Гц" : ""}</small>`;
+    d.querySelector("input").addEventListener("change", e => { s.name = e.target.value.trim() || `Спикер ${k+1}`; e.target.value = s.name; persist(); renderTurns(); });
+    box.appendChild(d);
+  });
+  const add = document.createElement("button"); add.textContent = "+ человек";
+  add.onclick = () => { data.speakers.push({name: `Спикер ${data.speakers.length+1}`, f0: null}); persist(); renderAll(); };
+  box.appendChild(add);
+}
+
+function spkSelect(tr, i){
+  const sel = document.createElement("select");
+  data.speakers.forEach((s, k) => { const o = new Option(s.name, k); o.style.color = color(k); sel.add(o); });
+  sel.add(new Option("+ новый человек", "new"));
+  sel.value = tr.spk;
+  sel.style.borderColor = color(tr.spk);
+  sel.onchange = () => {
+    if (sel.value === "new") { data.speakers.push({name: `Спикер ${data.speakers.length+1}`, f0: null}); tr.spk = data.speakers.length - 1; }
+    else tr.spk = +sel.value;
+    persist(); renderAll();
+  };
+  return sel;
+}
+
+function contourSelect(tr){
+  const sel = document.createElement("select");
+  CONTOURS.forEach(c => sel.add(new Option(c, c)));
+  sel.value = tr.contour_fix || tr.contour || "?";
+  if (tr.contour_fix && tr.contour_fix !== tr.contour) sel.className = "fixed";
+  sel.title = "Что услышал алгоритм: " + (tr.contour || "?") + (tr.slope != null ? `, наклон ${tr.slope} пт/с` : "");
+  sel.onchange = () => { tr.contour_fix = sel.value === tr.contour ? null : sel.value; persist(); renderTurns(); };
+  return sel;
+}
+
+function renderTurns(){
+  const box = document.getElementById("turns");
+  box.innerHTML = "";
+  data.turns.forEach((tr, i) => {
+    const row = document.createElement("div"); row.className = "turn" + (tr.note ? " flag" : "") + (i === cur ? " playing" : "");
+    row.style.borderLeftColor = color(tr.spk); row.dataset.i = i;
+    const t = document.createElement("button"); t.className = "t"; t.textContent = ts(tr.start); t.onclick = () => play(i);
+    row.appendChild(t);
+    row.appendChild(spkSelect(tr, i));
+    row.appendChild(contourSelect(tr));
+    const wd = document.createElement("div");
+    const words = document.createElement("div"); words.className = "words";
+    tr.words.forEach((w, j) => {
+      const sp = document.createElement("span"); sp.className = "w" + (w.sure === false ? " unsure" : "");
+      sp.contentEditable = "true"; sp.spellcheck = false; sp.textContent = w.w.trim();
+      sp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); sp.blur(); } });
+      sp.addEventListener("blur", () => {
+        const v = sp.textContent.trim();
+        if (v === w.w.trim()) return;
+        if (!v) { tr.words.splice(j, 1); if (!tr.words.length) data.turns.splice(i, 1); persist(); renderAll(); return; }
+        w.w = " " + v; persist();
+      });
+      sp.addEventListener("contextmenu", e => { e.preventDefault(); if (j > 0) split(i, j); });
+      words.appendChild(sp); words.appendChild(document.createTextNode(" "));
+    });
+    wd.appendChild(words);
+    const m = [];
+    if (tr.semi != null) m.push(`высота ${tr.semi > 0 ? "+" : ""}${tr.semi} пт`);
+    if (tr.loud_z != null) m.push(`громкость z ${tr.loud_z > 0 ? "+" : ""}${tr.loud_z}`);
+    if (tr.pauses) m.push(`пауз ${tr.pauses}`);
+    if (tr.note) m.push(tr.note);
+    if (m.length) { const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = m.join(", "); wd.appendChild(meta); }
+    row.appendChild(wd);
+    const ops = document.createElement("div"); ops.className = "ops";
+    const mk = (label, title, fn) => { const b = document.createElement("button"); b.textContent = label; b.title = title; b.onclick = fn; ops.appendChild(b); };
+    if (i > 0) mk("⤒", "Слить с предыдущей репликой (говорящий остаётся от предыдущей)", () => merge(i));
+    mk("⚑", "Пометить: нужно проверить", () => { tr.note = tr.note ? "" : "проверить"; persist(); renderTurns(); });
+    mk("✕", "Удалить реплику (шум, не речь)", () => { data.turns.splice(i, 1); persist(); renderAll(); });
+    row.appendChild(ops);
+    box.appendChild(row);
+  });
+}
+function renderAll(){ renderSpeakers(); renderTurns(); }
+
+function split(i, j){
+  const tr = data.turns[i];
+  const nt = {...clone(tr), words: tr.words.slice(j), start: tr.words[j].s, contour: "?", contour_fix: null, slope: null, end_semi: null, semi: null, loud_z: null, pauses: 0, note: ""};
+  tr.words = tr.words.slice(0, j); tr.end = tr.words[tr.words.length-1].e;
+  tr.contour = "?"; tr.contour_fix = null; tr.slope = null; tr.end_semi = null;
+  data.turns.splice(i + 1, 0, nt);
+  persist(); renderAll();
+}
+function merge(i){
+  const a = data.turns[i-1], b = data.turns[i];
+  a.words = a.words.concat(b.words); a.end = b.end;
+  a.contour = b.contour; a.contour_fix = b.contour_fix; a.slope = b.slope; a.end_semi = b.end_semi;
+  a.pauses = (a.pauses || 0) + (b.pauses || 0) + 1; a.note = a.note || b.note;
+  data.turns.splice(i, 1);
+  persist(); renderAll();
+}
+
+// ---------- звук
+const au = document.getElementById("au");
+function play(i){
+  const tr = data.turns[i];
+  cur = i; stopAt = tr.end + 0.15;
+  au.currentTime = Math.max(0, tr.start - 0.1);
+  au.play().catch(() => setStatus("Запись не открылась, нажми \"Выбрать запись\" и укажи файл"));
+  renderTurns();
+  const row = document.querySelector(`.turn[data-i="${i}"]`); if (row) row.scrollIntoView({block: "center", behavior: "smooth"});
+}
+au.addEventListener("timeupdate", () => {
+  if (stopAt != null && au.currentTime >= stopAt) { au.pause(); stopAt = null; return; }
+  const i = data.turns.findIndex(tr => au.currentTime >= tr.start && au.currentTime <= tr.end + 0.3);
+  if (i >= 0 && i !== cur) { cur = i; document.querySelectorAll(".turn.playing").forEach(r => r.classList.remove("playing"));
+    const row = document.querySelector(`.turn[data-i="${i}"]`); if (row) row.classList.add("playing"); }
+});
+au.addEventListener("error", () => setStatus("Запись рядом не найдена или формат не играет: нажми \"Выбрать запись\""));
+document.addEventListener("keydown", e => {
+  if (e.code === "Space" && !e.target.isContentEditable && e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") {
+    e.preventDefault(); if (au.paused) { stopAt = null; au.play().catch(() => {}); } else au.pause();
+  }
+  if (e.key === "Escape") au.pause();
+});
+document.getElementById("pick").onclick = () => document.getElementById("filepick").click();
+document.getElementById("filepick").onchange = e => { const f = e.target.files[0]; if (f) { au.src = URL.createObjectURL(f); setStatus("Запись: " + f.name); } };
+
+// ---------- сохранение
+function speakersTxt(){
+  const total = {};
+  data.turns.forEach(tr => total[tr.spk] = (total[tr.spk] || 0) + (tr.end - tr.start));
+  const lines = ["# " + data.title, ""];
+  Object.keys(total).map(Number).sort((a,b) => a-b).forEach(k => {
+    const s = data.speakers[k]; lines.push(`- ${s.name}: ${ts(total[k])} речи${s.f0 ? ", голос " + s.f0 + " Гц" : ""}`);
+  });
+  lines.push("");
+  data.turns.forEach(tr => lines.push(`[${ts(tr.start)}] ${data.speakers[tr.spk].name}: ${text(tr)}`));
+  return lines.join("\n") + "\n";
+}
+function stem(){ return (data.media || data.title).replace(/\.[^.]+$/, ""); }
+async function saveFile(name, body, mime){
+  const blob = new Blob([body], {type: mime});
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({suggestedName: name, types: [{description: name.split(".").pop(), accept: {[mime]: ["." + name.split(".").pop()]}}]});
+      const w = await h.createWritable(); await w.write(blob); await w.close();
+      return true;
+    } catch(e) { if (e.name === "AbortError") return false; }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  return true;
+}
+document.getElementById("save").onclick = async () => {
+  document.activeElement && document.activeElement.blur();
+  const out = clone(data); out.saved = new Date().toISOString(); out.edits = edits;
+  if (await saveFile(stem() + ".review.json", JSON.stringify(out, null, 1), "application/json"))
+    setStatus(`сохранено ${new Date().toLocaleTimeString("ru")}, правок ${edits}. Дальше: перетащи .review.json на apply_review.bat`);
+};
+document.getElementById("savetxt").onclick = () => saveFile(stem() + ".speakers.txt", speakersTxt(), "text/plain");
+document.getElementById("reset").onclick = () => {
+  if (!confirm("Убрать все правки и вернуть исходную расшифровку?")) return;
+  localStorage.removeItem(KEY); data = clone(EMBEDDED); edits = 0; cur = -1;
+  document.getElementById("banner").innerHTML = ""; setStatus(""); renderAll();
+};
+
+load();
+document.getElementById("title").textContent = data.title;
+document.title = "Правка: " + data.title;
+if (data.media) au.src = encodeURI(data.media);
+renderAll();
+if (edits) setStatus(`правок: ${edits}, не сохранено в файл`);
+</script>
+</body>
+</html>
